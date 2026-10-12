@@ -6,8 +6,12 @@ This project runs Jenkins in Docker and allows Jenkins pipelines to build and ru
 
 ```text
 .
+├── .env.example
 ├── Dockerfile
 ├── compose.yaml
+├── nginx/
+│   └── jenkins.conf.template
+├── setup-nginx.sh
 └── README.md
 ```
 
@@ -59,6 +63,17 @@ It also creates two named volumes:
 | `jenkins-data` | Stores Jenkins configuration, jobs, plugins, and build data |
 | `jenkins-docker-certs` | Stores TLS certificates for secure communication with the Docker daemon |
 
+### Domain configuration
+
+The domain and Let's Encrypt email address are read from `.env`:
+
+| Variable | Description |
+|---|---|
+| `JENKINS_DOMAIN` | Public domain name pointing to this server, e.g. `jenkins.example.com` |
+| `LETSENCRYPT_EMAIL` | Email address for Let's Encrypt expiry and account notices |
+
+`setup-nginx.sh` renders `nginx/jenkins.conf.template` with these values into `/etc/nginx/conf.d/jenkins.conf`.
+
 Both services connect to the same bridge network named `jenkins`.
 
 ## Getting Started
@@ -67,7 +82,17 @@ Both services connect to the same bridge network named `jenkins`.
 
 Make sure `Dockerfile`, `compose.yaml`, and `README.md` are in the same directory.
 
-### 2. Build and start the containers
+### 2. Configure the domain
+
+Create `.env` from the example and set your domain and email:
+
+```bash
+cp .env.example .env
+```
+
+Make sure the domain's DNS record points to this server and that ports `80` and `443` are reachable.
+
+### 3. Build and start the containers
 
 Run:
 
@@ -77,7 +102,19 @@ docker compose up -d --build
 
 This command builds the custom Jenkins image and starts both services.
 
-### 3. Check container status
+### 4. Install nginx and certbot (Ubuntu)
+
+Run the setup script on the host:
+
+```bash
+./setup-nginx.sh
+```
+
+It installs nginx from the official nginx.org repository and certbot, requests a Let's Encrypt certificate for `JENKINS_DOMAIN`, and configures nginx as an HTTPS reverse proxy to Jenkins on `127.0.0.1:8080`.
+
+Certificates are renewed by certbot's systemd timer, and nginx is reloaded after each renewal. The script is safe to re-run; it skips the certificate request when one already exists.
+
+### 5. Check container status
 
 ```bash
 docker compose ps
@@ -97,7 +134,7 @@ docker compose logs -f docker
 
 Press `Ctrl+C` to stop following the logs. This does not stop the containers.
 
-### 4. Retrieve the initial administrator password
+### 6. Retrieve the initial administrator password
 
 Run:
 
@@ -107,15 +144,15 @@ docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword
 
 Copy the password displayed in your terminal.
 
-### 5. Open Jenkins
+### 7. Open Jenkins
 
-Visit:
-
-http://localhost:8080
+Visit `https://<JENKINS_DOMAIN>` (or http://localhost:8080 from the server itself).
 
 Enter the initial administrator password and follow the setup wizard.
 
 Install the recommended plugins or select the plugins you need, then create your administrator account.
+
+When asked for the Jenkins URL (or later under **Manage Jenkins → System → Jenkins URL**), enter `https://<JENKINS_DOMAIN>/`.
 
 ## Verify Docker Access from Jenkins
 
@@ -213,6 +250,12 @@ docker compose up -d --build
 ```
 
 Your Jenkins configuration is retained in the `jenkins-data` named volume.
+
+After changing `JENKINS_DOMAIN` in `.env` or editing `nginx/jenkins.conf.template`, re-run the setup script:
+
+```bash
+./setup-nginx.sh
+```
 
 If you change the Docker daemon or TLS configuration, ensure the Jenkins environment variables and certificate mounts remain consistent.
 
